@@ -1,0 +1,20 @@
+[Unit]
+Description=GitHub IssueOps Agent (Asynchronous Task Scheduler)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/data/workspace/github-issueops-agent
+ExecStart=/usr/bin/python3 /data/workspace/github-issueops-agent/src/main.py --daemon
+Restart=always
+RestartSec=15
+StandardOutput=append:/data/workspace/github-issueops-agent/logs/issueops.log
+StandardError=append:/data/workspace/github-issueops-agent/logs/issueops.log
+
+# 环境变量设置
+Environment=PYTHONUNBUFFERED=1
+Environment=WORKSPACE_ROOT=/data/workspace
+
+[Install]
+WantedBy=default.target

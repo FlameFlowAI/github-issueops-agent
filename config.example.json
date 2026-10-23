@@ -1,0 +1,14 @@
+{
+  "github_token": "YOUR_GITHUB_PERSONAL_ACCESS_TOKEN",
+  "repo": "FlameFlowAI/my-agent-memory",
+  "target_labels": [
+    "agent-task",
+    "[agent-task]"
+  ],
+  "poll_interval_seconds": 300,
+  "max_retries": 3,
+  "default_timeout_seconds": 600,
+  "network_check_host": "api.github.com",
+  "workspace_root": "/data/workspace",
+  "dry_run": false
+}
