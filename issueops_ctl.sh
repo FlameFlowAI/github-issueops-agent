@@ -81,7 +81,7 @@ cmd_start() {
 
   echo -e "${INDIGO}🚀 正在启动 GitHub IssueOps 守护进程...${RESET}"
   cd "${SCRIPT_DIR}"
-  nohup "${PYTHON_BIN}" -u "${SCRIPT_DIR}/src/main.py" --daemon < /dev/null >> "${LOG_FILE}" 2>&1 &
+  setsid "${PYTHON_BIN}" -u "${SCRIPT_DIR}/src/main.py" --daemon < /dev/null >> "${LOG_FILE}" 2>&1 &
   local new_pid=$!
   echo "${new_pid}" > "${PID_FILE}"
   sleep 1
