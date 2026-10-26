@@ -69,10 +69,23 @@ class TaskDispatcher:
                 cmd_to_run = f"{sys.executable} -c {subprocess.list2cmdline([py_code])}"
                 task_type = "python_script"
 
-        # 6. 普通自然语言任务或未指定命令：执行默认记录与健康自检
+        # 5.5 提取多 Agent 协同指令 (/agy, /claude, /gemini, /cursor, /team 或 @agy 等)
+        elif any(k in body.lower() or k in title.lower() for k in ["/agy", "/claude", "/gemini", "/cursor", "/team", "@agy", "@claude", "@gemini", "@cursor", "@team"]):
+            combined_prompt = f"{title}\n{body}".strip()
+            bus_script = "/data/workspace/my-agent-memory/scripts/agent_collab_bus.py"
+            cmd_to_run = f"{sys.executable} {bus_script} dispatch {subprocess.list2cmdline([combined_prompt])} --source github_issueops"
+            task_type = "multi_agent_dispatch"
+
+        # 6. 普通自然语言任务或未指定命令：通过协同总线调度默认 Agent 或执行状态自检
         if not cmd_to_run:
-            cmd_to_run = f"echo '已成功接收手机端指令: {title}' && /data/workspace/command_center_ctl.sh status"
-            task_type = "task_acknowledgement"
+            bus_script = "/data/workspace/my-agent-memory/scripts/agent_collab_bus.py"
+            if len(body) > 15 and os.path.exists(bus_script):
+                combined_prompt = f"{title}\n{body}".strip()
+                cmd_to_run = f"{sys.executable} {bus_script} dispatch {subprocess.list2cmdline([combined_prompt])} --source github_issueops"
+                task_type = "agent_natural_task"
+            else:
+                cmd_to_run = f"echo '已成功接收手机端指令: {title}' && /data/workspace/command_center_ctl.sh status"
+                task_type = "task_acknowledgement"
 
         # 执行命令
         exit_code, stdout, stderr = self._run_command(cmd_to_run)

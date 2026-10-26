@@ -8,6 +8,7 @@ IssueOps Core Orchestration Engine (核心状态机与轮询调度引擎)
 """
 
 import os
+import sys
 import json
 import time
 import logging
@@ -81,26 +82,46 @@ class IssueOpsEngine:
                 logger.error("❌ 网络持续离线，跳过本次巡检，等待下次调度。")
                 return 0
 
-        # 2. 查询待处理的 Issues
+        # 2. 查询待处理的 Issues (获取全部 open Issues，智能兼容手机端未手动选标签的情况)
         try:
-            open_issues = self.client.get_open_issues(labels=self.target_labels)
+            all_open_issues = self.client.get_open_issues(labels=None)
         except Exception as e:
             logger.error(f"❌ 访问 GitHub Issues 失败: {e}")
             return 0
 
         self.cache["last_poll_time"] = int(time.time())
-        logger.info(f"📋 共发现 {len(open_issues)} 个包含目标标签的待处理任务")
+        auto_claim_all = self.config.get("auto_claim_all_open", True)
 
         processed_count = 0
-        for issue in open_issues:
+        for issue in all_open_issues:
             issue_number = issue.get("number")
-            issue_key = str(issue_number)
+            title = issue.get("title", "")
+            body = issue.get("body", "")
 
             # 避免重复认领正在执行或已处理的任务
             labels = [l if isinstance(l, str) else l["name"] for l in issue.get("labels", [])]
             if "status:running" in labels or "status:completed" in labels:
                 logger.info(f"⏭ Issue #{issue_number} 已处于 {labels} 状态，跳过重复认领")
                 continue
+
+            # 智能判断是否为待调度任务：
+            # 1. 明确携带目标标签 (agent-task / [agent-task])
+            has_target_label = any(l in labels for l in self.target_labels)
+            # 2. 含有调度指令 (/backfeed, /run, /sync, ``` 等)
+            has_command = any(k in (title + " " + body) for k in ["/backfeed", "/run", "/sync", "/card", "```"])
+            # 3. 专属任务仓库默认处理所有未关闭 Issue
+            is_dedicated_repo = "github-issueops-agent" in self.repo or auto_claim_all
+
+            if not (has_target_label or has_command or is_dedicated_repo):
+                logger.info(f"⏭ Issue #{issue_number} 未匹配调度指令且未打标签，跳过")
+                continue
+
+            # 自动补齐 agent-task 标签 (便于在 GitHub 界面清晰归类)
+            if not has_target_label:
+                try:
+                    self.client.add_labels(issue_number, ["agent-task"])
+                except Exception:
+                    pass
 
             # 处理单个任务
             try:
@@ -164,6 +185,27 @@ class IssueOpsEngine:
             "duration": exec_result["duration"]
         }
         logger.info(f"🏁 任务 #{issue_number} 已成功汇报并关闭 Issue！")
+
+        # 7. 若为真实 GitHub 任务（非 Mock 测试），自动联动飞书网关向手机推送闭环通知卡片
+        if not isinstance(self.client, MockGitHubClient):
+            try:
+                bus_dir = "/data/workspace/my-agent-memory/scripts"
+                if bus_dir not in sys.path:
+                    sys.path.insert(0, bus_dir)
+                from agent_collab_bus import push_feishu_notification
+                push_feishu_notification(
+                    title=f"🛰️ IssueOps 离线工单已闭环 [#{issue_number}]",
+                    markdown_body=(
+                        f"**工单标题**：{title}\n"
+                        f"**任务类型**：`{exec_result.get('task_type')}`\n"
+                        f"**执行耗时**：`{exec_result.get('duration', 0):.1f}s`\n"
+                        f"**执行结果**：{'✅ 成功并自动关单' if exec_result.get('success') else '❌ 执行异常'}\n\n"
+                        f"*详细执行报告已回写至 GitHub Issue #{issue_number} 评论区。*"
+                    ),
+                    color="green" if exec_result.get("success") else "red"
+                )
+            except Exception as notify_err:
+                logger.warning(f"联动推送飞书通知失败 (非致命): {notify_err}")
 
     def run_daemon(self):
         """
