@@ -31,3 +31,5 @@ wheels/
 logs/
 *.log
 .issueops_cache.json
+*.pid
+.issueops.pid
